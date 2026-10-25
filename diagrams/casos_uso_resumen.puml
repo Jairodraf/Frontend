@@ -1,0 +1,51 @@
+@startuml Casos de Uso FichajeApp
+
+left to right direction
+skinparam packageStyle rectangle
+
+actor "Usuario\n(User)" as User
+actor "Administrador\n(Admin)" as Admin
+
+rectangle "FichajeApp" {
+  ' Casos de uso comunes
+  usecase "Iniciar sesión" as UC01
+  usecase "Fichar Entrada/Salida" as UC02
+  usecase "Añadir incidencia\na un fichaje" as UC03
+  usecase "Consultar\nfichajes propios" as UC04
+  usecase "Solicitar ausencias" as UC05
+  usecase "Consultar/Eliminar\nausencias propias" as UC06
+  usecase "Cerrar sesión" as UC07
+
+  ' Casos de uso exclusivos del Admin
+  usecase "Aprobar/Denegar\nausencias" as UC08
+  usecase "Dar de alta\nempleado" as UC09
+  usecase "Modificar\nempleado" as UC10
+  usecase "Eliminar\nempleado" as UC11
+}
+
+' Relaciones User
+User --> UC01
+User --> UC02
+User --> UC03
+User --> UC04
+User --> UC05
+User --> UC06
+User --> UC07
+
+' Relaciones Admin (hereda de User + exclusivas)
+Admin --> UC01
+Admin --> UC02
+Admin --> UC03
+Admin --> UC04
+Admin --> UC05
+Admin --> UC06
+Admin --> UC07
+Admin --> UC08
+Admin --> UC09
+Admin --> UC10
+Admin --> UC11
+
+' Herencia entre actores
+Admin --|> User
+
+@enduml

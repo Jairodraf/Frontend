@@ -237,3 +237,36 @@
     </div>
   </div>
 </div>
+
+<!-- Modal de advertencia: Entrada sin salida después de 9 horas -->
+<div *ngIf="isEntradaSinSalidaVisible" class="modal-backdrop-app">
+  <div class="modal-card-app">
+    <div class="modal-header-app bg-warning text-dark">
+      ⚠️ Entrada sin salida detectada
+    </div>
+    <div class="modal-body-app">
+      <p class="mb-2">No has registrado una salida después de tu última entrada.</p>
+      <div class="fichaje-info">
+        <p><b>Fecha:</b> {{ entradaSinSalidaData.fecha }}</p>
+        <p><b>Hora de entrada:</b> {{ entradaSinSalidaData.hora }}</p>
+      </div>
+      <p class="mb-0 text-danger"><b>⚠️ Debes registrar una incidencia explicando lo ocurrido.</b></p>
+    </div>
+    <div class="modal-footer-app justify-content-center">
+      <button class="btn btn-warning" (click)="handleEntradaSinSalidaOk()">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de error: Fecha fin anterior a fecha inicio -->
+<div *ngIf="showDateError" class="modal-backdrop-app">
+  <div class="modal-card-app">
+    <div class="modal-header-app bg-danger text-white">Error de fechas</div>
+    <div class="modal-body-app">
+      <p class="mb-0">La fecha de fin no puede ser anterior a la de inicio.</p>
+    </div>
+    <div class="modal-footer-app">
+      <button class="btn btn-danger" (click)="closeDateError()">Entendido</button>
+    </div>
+  </div>
+</div>

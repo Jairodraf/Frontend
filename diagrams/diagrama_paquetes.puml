@@ -1,0 +1,192 @@
+@startuml Diagrama de Paquetes - FichajeApp
+
+' Configuración visual
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor<<Frontend>> LightGreen
+    BackgroundColor<<Backend>> LightBlue
+    BackgroundColor<<Data>> LightYellow
+    BackgroundColor<<External>> Pink
+    BorderColor Black
+    FontSize 12
+}
+
+skinparam arrow {
+    Color Black
+    Thickness 2
+}
+
+' ==================== CAPA DE PRESENTACIÓN ====================
+
+package "Navegador Web" <<External>> {
+    [Usuario]
+}
+
+' ==================== FRONTEND ====================
+
+package "Frontend Angular SPA" <<Frontend>> {
+
+    package "Componentes" {
+        [LoginComponent]
+        [RegistroComponent]
+        [FichajeComponent]
+        [AusenciasComponent]
+        [HeaderComponent]
+        [FooterComponent]
+        [ContactoComponent]
+        [PrivacidadComponent]
+    }
+
+    package "Servicios" {
+        [AuthService]
+        [EmpleadosService]
+        [FichajesService]
+        [AusenciasService]
+    }
+
+    package "Guards y Security" {
+        [AuthGuard]
+        [AdminGuard]
+        [AuthInterceptor]
+    }
+
+    package "Routing" {
+        [AppRoutes]
+    }
+}
+
+' ==================== BACKEND ====================
+
+package "Backend ASP.NET Core API" <<Backend>> {
+
+    package "Controllers (API REST)" {
+        [AuthController]
+        [EmpleadosController]
+        [FichajesController]
+        [AusenciasController]
+    }
+
+    package "Services (Lógica de Negocio)" {
+        [AuthService\n(Backend)]
+        [EmpleadoService]
+        [FichajeService]
+        [AusenciaService]
+    }
+
+    package "Data Access Layer" {
+        [FichajeAppDbContext]
+        [Migrations]
+    }
+
+    package "Models" {
+        [Empleado]
+        [Fichaje]
+        [Ausencia]
+        [DTOs]
+    }
+
+    package "Security" {
+        [JWT Handler]
+        [BCrypt Password]
+    }
+}
+
+' ==================== BASE DE DATOS ====================
+
+package "PostgreSQL Database" <<Data>> {
+    database "fichajeapp" {
+        [Tabla: empleados]
+        [Tabla: fichajes]
+        [Tabla: ausencias]
+    }
+}
+
+' ==================== SERVICIOS EXTERNOS ====================
+
+package "Servicios Externos" <<External>> {
+    [SMTP Server\n(Email)]
+}
+
+' ==================== RELACIONES FRONTEND ====================
+
+[Usuario] --> [Navegador Web] : accede
+
+[Navegador Web] --> [LoginComponent] : HTTP/HTTPS
+[Navegador Web] --> [RegistroComponent]
+[Navegador Web] --> [FichajeComponent]
+[Navegador Web] --> [AusenciasComponent]
+[Navegador Web] --> [HeaderComponent]
+[Navegador Web] --> [FooterComponent]
+
+[Componentes] --> [Servicios] : usa
+[Componentes] --> [Routing] : navega
+
+[Guards y Security] --> [AuthService] : verifica
+[AuthInterceptor] --> [AuthService] : obtiene token
+
+[Servicios] ..> [Controllers (API REST)] : HTTP REST API\n(JSON)
+
+' ==================== RELACIONES BACKEND ====================
+
+[Controllers (API REST)] --> [Services (Lógica de Negocio)] : usa
+[Controllers (API REST)] --> [DTOs] : serializa/deserializa
+
+[Services (Lógica de Negocio)] --> [Data Access Layer] : accede datos
+[Services (Lógica de Negocio)] --> [Models] : manipula
+[Services (Lógica de Negocio)] --> [Security] : usa
+
+[Data Access Layer] --> [Models] : mapea
+[FichajeAppDbContext] --> [PostgreSQL Database] : Entity Framework Core\n(ORM)
+
+[Migrations] --> [PostgreSQL Database] : actualiza esquema
+
+' ==================== RELACIONES BASE DE DATOS ====================
+
+[Tabla: empleados] --> [Tabla: fichajes] : 1:N
+[Tabla: empleados] --> [Tabla: ausencias] : 1:N
+
+' ==================== SERVICIOS EXTERNOS ====================
+
+[AusenciasComponent] ..> [SMTP Server\n(Email)] : envía notificación
+
+' ==================== NOTAS ====================
+
+note right of [Navegador Web]
+  Requisitos:
+  - Chrome 90+
+  - Edge 90+
+  - Firefox 88+
+  - Safari 14+
+end note
+
+note right of [JWT Handler]
+  Autenticación stateless
+  con tokens JWT
+end note
+
+note bottom of [PostgreSQL Database]
+  Base de datos relacional
+  con soporte completo
+  para transacciones ACID
+end note
+
+note left of [AuthInterceptor]
+  Añade automáticamente
+  el token JWT a todas
+  las peticiones HTTP
+end note
+
+' ==================== LEYENDA ====================
+
+legend right
+  |<back:LightGreen> Frontend </back>| Angular 18 + TypeScript |
+  |<back:LightBlue> Backend </back>| ASP.NET Core 8/9 + C# |
+  |<back:LightYellow> Data </back>| PostgreSQL 15+ |
+  |<back:Pink> External </back>| Servicios externos |
+
+  **Tipos de relaciones:**
+  --> Dependencia directa
+  ..> Comunicación HTTP/REST
+endlegend
+
+@enduml

@@ -6,19 +6,31 @@ import { FichajesService, FichajeCreateDto, FichajeDto } from '../../services/fi
 import { AuthService } from '../../services/auth.service';
 import { EmpleadosService, EmpleadoDto } from '../../services/empleados.service';
 
+/** Tipo de fichaje (entrada o salida) */
 type PunchType = 'Entrada' | 'Salida';
+
+/** Último botón presionado por el usuario */
 type LastPressed = 'ENTRADA' | 'SALIDA';
 
+/**
+ * Estructura de un item del historial de fichajes.
+ * Incluye tanto información de UI como metadata del backend.
+ */
 interface HistoryItem {
-  id?: string; // <-- id del backend (para poder actualizar observación)
+  id?: string; // ID del backend (para actualizar observación)
   type: PunchType;
   date: string;
   time: string;
-  ts: string;
-  incidence?: string;
-  empleadoId?: number; // <-- para filtrar por empleado
+  ts: string; // Timestamp ISO para ordenamiento y cálculos
+  incidence?: string; // Observación/incidencia registrada
+  empleadoId?: number; // ID del empleado (para filtrado por admin)
 }
 
+/**
+ * Componente de página de fichaje que gestiona el registro de entradas y salidas.
+ * Permite a los usuarios fichar entrada/salida, registrar incidencias, y ver historial.
+ * Los administradores pueden consultar fichajes de cualquier empleado.
+ */
 @Component({
   selector: 'app-fichaje',
   standalone: true,
@@ -27,80 +39,140 @@ interface HistoryItem {
   styleUrls: ['./fichaje.scss'],
 })
 export class Fichaje implements AfterViewInit, OnDestroy {
+  // Servicios inyectados
   private api = inject(FichajesService);
   private msg = inject(NzMessageService);
   private auth = inject(AuthService);
   private empleadosService = inject(EmpleadosService);
 
-  // … (tus propiedades tal cual)
+  // Estado del último fichaje
+  /** Tipo del último fichaje (Entrada/Salida) */
   lastType: string = '—';
+  /** Fecha del último fichaje */
   lastDate: string = '';
+  /** Hora del último fichaje */
   lastTime: string = '';
 
+  /** Hora actual del reloj en formato HH:MM:SS */
   currentTime: string = '';
 
+  // Control de botones de fichaje
+  /** Deshabilita el botón de Entrada si ya se ha fichado entrada */
   entradaDisabled = false;
+  /** Deshabilita el botón de Salida si no hay entrada previa */
   salidaDisabled = true;
 
+  // Historial de fichajes
+  /** Lista de fichajes cargados desde backend o localStorage */
   history: HistoryItem[] = [];
+  /** Clave para almacenar el historial en localStorage */
   private storageKey = 'fichaje_history_v1';
 
+  // Control de estado de fichaje
+  /** Último botón presionado (ENTRADA/SALIDA) */
   lastPressed: LastPressed | null = null;
+  /** Índice del último fichaje de entrada en el historial */
   private lastEntryIndex: number | null = null;
+  /** Índice del último fichaje de salida en el historial */
   private lastExitIndex: number | null = null;
 
+  // Filtros de búsqueda
+  /** Fecha de inicio del rango de filtro */
   filterStart: string = '';
+  /** Fecha de fin del rango de filtro */
   filterEnd: string = '';
 
+  // Registro de incidencias
+  /** Texto de la incidencia a registrar */
   incidenceText: string = '';
+  /** Controla la visibilidad del modal de éxito de incidencia */
   isIncidenceSuccessVisible: boolean = false;
+  /** Controla la visibilidad del modal de éxito de fichaje */
   isFichajeSuccessVisible: boolean = false;
+  /** Datos del fichaje para mostrar en modal de confirmación */
   fichajeConfirmData = { tipo: '', fecha: '', hora: '' };
 
+  // Modal de entrada sin salida
+  /** Controla la visibilidad del modal de advertencia de entrada sin salida */
+  isEntradaSinSalidaVisible: boolean = false;
+  /** Datos de la entrada sin salida para mostrar en modal */
+  entradaSinSalidaData = { fecha: '', hora: '' };
+
+  // Modal de error de fechas
+  /** Controla la visibilidad del modal de error cuando fecha fin < fecha inicio */
+  showDateError = false;
+
   // Funcionalidad admin
+  /** Indica si el usuario actual es administrador */
   isAdmin = false;
+  /** Lista de todos los empleados (solo admin) */
   empleados: EmpleadoDto[] = [];
+  /** ID del empleado seleccionado para consultar fichajes (solo admin) */
   selectedEmpleadoId: number | null = null;
+  /** Query de búsqueda de empleados */
   searchQuery = '';
+  /** Lista de empleados filtrados por la búsqueda */
   filteredEmpleados: EmpleadoDto[] = [];
+  /** Controla la visibilidad de la lista de empleados filtrados */
   showEmpleadosList = false;
 
+  // Resultados de filtrado y agrupación
+  /** Grupos de fichajes agrupados por fecha con pares entrada-salida */
   filteredGroups: Array<{
     date: string;
     pairs: Array<{ entrada: HistoryItem | null; salida: HistoryItem | null; durationMs: number }>;
     totalMs: number;
   }> = [];
+  /** Tiempo total trabajado en el rango filtrado (en milisegundos) */
   filteredTotalMs: number = 0;
 
+  /** Identificador del intervalo del reloj */
   private clockIntervalId: any = null;
 
+  /**
+   * Constructor del componente.
+   * Inicializa el historial, el reloj, verifica rol de admin,
+   * y carga fichajes desde backend o localStorage.
+   */
   constructor() {
+    // Cargar historial desde localStorage
     this.loadHistory();
 
+    // Iniciar reloj que se actualiza cada segundo
     this.updateClock();
     this.clockIntervalId = setInterval(() => this.updateClock(), 1000);
 
-    // Verificar si es admin
+    // Verificar si el usuario es administrador
     this.isAdmin = this.auth.rol === 'Admin';
     if (this.isAdmin) {
-      this.loadEmpleados();
+      this.loadEmpleados(); // Cargar lista de empleados para consulta
     }
 
-    // Load fichajes for the authenticated worker from backend (if logged in)
-    // If user is authenticated, fetch remote fichajes.
+    // Si el usuario está autenticado, cargar fichajes desde el backend
     if (this.auth.hasToken()) {
       this.loadRemoteFichajes();
     } else {
       // Si no hay token, usar historial local
       this.updateLastFromHistory();
+      this.checkEntradaSinSalida();
     }
   }
 
+  /** Hook de ciclo de vida después de inicializar la vista */
   ngAfterViewInit(): void {}
+
+  /**
+   * Hook de ciclo de vida al destruir el componente.
+   * Limpia el intervalo del reloj.
+   */
   ngOnDestroy(): void {
     if (this.clockIntervalId) clearInterval(this.clockIntervalId);
   }
 
+  /**
+   * Actualiza la hora actual mostrada en pantalla.
+   * Se ejecuta cada segundo mediante setInterval.
+   */
   private updateClock() {
     const now = new Date();
     this.currentTime = now.toLocaleTimeString('es-ES', {
@@ -110,7 +182,11 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     });
   }
 
-  // ===== helper para el error TS2554 (no existía en tu código) =====
+  /**
+   * Busca el índice del último fichaje de un tipo específico en el historial.
+   * @param kind Tipo de fichaje a buscar ('Entrada' o 'Salida')
+   * @returns El índice del último fichaje del tipo indicado, o null si no se encuentra
+   */
   private findLastIndex(kind: 'Entrada' | 'Salida'): number | null {
     for (let i = this.history.length - 1; i >= 0; i--) {
       if (this.history[i].type === kind) return i;
@@ -118,7 +194,11 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     return null;
   }
 
-  // ---------- Filtrado y agrupación para "Resultados" ----------
+  /**
+   * Aplica el filtro de fechas a los fichajes.
+   * Si es admin, puede consultar fichajes de cualquier empleado.
+   * Carga los fichajes del rango seleccionado y los agrupa por fecha.
+   */
   applyFilter() {
     if (!this.filterStart || !this.filterEnd) {
       this.filteredGroups = [];
@@ -128,6 +208,12 @@ export class Fichaje implements AfterViewInit, OnDestroy {
 
     const start = new Date(this.filterStart + 'T00:00:00');
     const end = new Date(this.filterEnd + 'T23:59:59.999');
+
+    // Validación: la fecha de fin no puede ser anterior a la de inicio
+    if (end < start) {
+      this.showDateError = true;
+      return;
+    }
 
     // Si es admin, cargar todos los fichajes y luego filtrar
     if (this.isAdmin) {
@@ -183,6 +269,12 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     this.processFilteredItems(items);
   }
 
+  /**
+   * Procesa los items filtrados del historial.
+   * Agrupa los fichajes por fecha y empareja entradas con salidas,
+   * calculando la duración de cada par y el total por día.
+   * @param items Lista de fichajes a procesar
+   */
   private processFilteredItems(items: HistoryItem[]) {
 
     // Agrupa por fecha local
@@ -248,9 +340,10 @@ export class Fichaje implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Load fichajes from backend. Always loads only the current user's fichajes
-   * to properly control button states (Entrada/Salida).
-   * Replaces local history with server data (the canonical source).
+   * Carga los fichajes del usuario actual desde el backend.
+   * Reemplaza el historial local con los datos del servidor (fuente canónica).
+   * Esto asegura el control correcto del estado de los botones Entrada/Salida.
+   * @param limit Número máximo de fichajes a cargar (opcional)
    */
   loadRemoteFichajes(limit?: number) {
     // Siempre cargar solo los fichajes del usuario actual para controlar botones correctamente
@@ -271,11 +364,18 @@ export class Fichaje implements AfterViewInit, OnDestroy {
         } as HistoryItem));
         this.saveHistory();
         this.updateLastFromHistory();
+        // Verificar entrada sin salida después de cargar
+        this.checkEntradaSinSalida();
       },
       error: () => this.msg.error('No se pudieron cargar los fichajes desde el servidor'),
     });
   }
 
+  /**
+   * Actualiza el estado del componente basándose en el último fichaje del historial.
+   * Controla la habilitación/deshabilitación de los botones Entrada/Salida,
+   * y verifica si hay entrada sin salida después de 9 horas.
+   */
   private updateLastFromHistory() {
     const last = this.history[this.history.length - 1];
     if (last) {
@@ -283,8 +383,19 @@ export class Fichaje implements AfterViewInit, OnDestroy {
       this.lastDate = last.date;
       this.lastTime = last.time;
       if (last.type === 'Entrada') {
-        this.entradaDisabled = true;
-        this.salidaDisabled = false;
+        // Verificar si han pasado más de 9 horas desde la entrada
+        const hoursElapsed = this.getHoursElapsed(last.ts);
+        if (hoursElapsed > 9) {
+          // Han pasado más de 9 horas, resetear a estado de entrada
+          this.entradaDisabled = false;
+          this.salidaDisabled = true;
+          // Mostrar modal de aviso
+          this.entradaSinSalidaData = { fecha: last.date, hora: last.time };
+          this.isEntradaSinSalidaVisible = true;
+        } else {
+          this.entradaDisabled = true;
+          this.salidaDisabled = false;
+        }
       } else {
         this.entradaDisabled = false;
         this.salidaDisabled = true;
@@ -299,7 +410,12 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     }
   }
 
-  // ---------- Fichar ----------
+  /**
+   * Registra un fichaje de entrada o salida.
+   * Actualiza el historial local, controla el estado de los botones,
+   * y persiste el fichaje en el backend.
+   * @param type Tipo de fichaje ('ENTRADA' o 'SALIDA')
+   */
   fichar(type: 'ENTRADA' | 'SALIDA') {
     const now = new Date();
     const date = now.toLocaleDateString('es-ES');
@@ -311,7 +427,7 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     const iso = now.toISOString();
 
     if (type === 'ENTRADA') {
-      // 1) Pinta local
+      // 1) Registrar fichaje de entrada en el historial local
       const entry: HistoryItem = { type: 'Entrada', date, time, ts: iso };
       this.history.push(entry);
       this.lastEntryIndex = this.history.length - 1;
@@ -325,11 +441,11 @@ export class Fichaje implements AfterViewInit, OnDestroy {
       this.salidaDisabled = false;
       this.saveHistory();
 
-      // 2) Persistir en backend
+      // 2) Persistir el fichaje de entrada en el backend
       const dto: FichajeCreateDto = { tipo: 'Entrada', fechaHora: iso };
       this.api.crear(dto).subscribe({
         next: (res: FichajeDto) => {
-          // guarda el id para poder actualizar Observacion más tarde
+          // Guardar el ID del backend para poder actualizar la observación más tarde
           this.history[this.lastEntryIndex!].id = res.id;
           this.saveHistory();
           // Mostrar modal de confirmación
@@ -339,7 +455,7 @@ export class Fichaje implements AfterViewInit, OnDestroy {
         error: () => this.msg.error('No se pudo registrar la Entrada en servidor'),
       });
     } else {
-      // SALIDA
+      // Registrar fichaje de salida
       const exit: HistoryItem = { type: 'Salida', date, time, ts: iso };
       this.history.push(exit);
       this.lastExitIndex = this.history.length - 1;
@@ -367,7 +483,11 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     }
   }
 
-  // ---------- Registrar incidencia (se guarda en Observacion del back) ----------
+  /**
+   * Registra una incidencia en el último fichaje realizado.
+   * La incidencia se guarda en el campo Observacion del backend.
+   * Si no hay conexión, se guarda localmente.
+   */
   registerIncidentNow() {
     const text = (this.incidenceText || '').trim();
     if (!text) return;
@@ -383,12 +503,12 @@ export class Fichaje implements AfterViewInit, OnDestroy {
 
     if (idx == null || idx < 0) return;
 
-    // actualiza local
+    // Actualizar incidencia en el historial local
     this.history[idx].incidence = text;
     this.saveHistory();
     this.incidenceText = '';
 
-    // si hay id, persistimos Observacion
+    // Si el fichaje tiene ID del backend, persistir la observación en el servidor
     const id = this.history[idx].id;
     if (id) {
       this.api.actualizarObservacion(id, text).subscribe({
@@ -402,15 +522,61 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     }
   }
 
+  /** Cierra el modal de éxito de registro de incidencia */
   handleIncidenceSuccessOk(): void {
     this.isIncidenceSuccessVisible = false;
   }
 
+  /** Cierra el modal de éxito de registro de fichaje */
   handleFichajeSuccessOk(): void {
     this.isFichajeSuccessVisible = false;
   }
 
-  // Métodos para búsqueda de empleados (Admin)
+  /**
+   * Verifica si hay una entrada sin salida después de 9 horas.
+   * Si es así, resetea el estado de los botones y muestra una advertencia.
+   */
+  private checkEntradaSinSalida(): void {
+    const last = this.history[this.history.length - 1];
+    if (last && last.type === 'Entrada') {
+      const hoursElapsed = this.getHoursElapsed(last.ts);
+      if (hoursElapsed > 9) {
+        // Han pasado más de 9 horas: resetear a estado inicial (permitir nueva entrada)
+        this.entradaDisabled = false;
+        this.salidaDisabled = true;
+        // Mostrar modal de advertencia al usuario
+        this.entradaSinSalidaData = { fecha: last.date, hora: last.time };
+        this.isEntradaSinSalidaVisible = true;
+      }
+    }
+  }
+
+  /**
+   * Calcula las horas transcurridas desde un timestamp dado.
+   * @param timestamp Timestamp en formato ISO string
+   * @returns Número de horas transcurridas
+   */
+  private getHoursElapsed(timestamp: string): number {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffMs = now.getTime() - then.getTime();
+    return diffMs / (1000 * 60 * 60); // Convertir milisegundos a horas
+  }
+
+  /** Cierra el modal de advertencia de entrada sin salida */
+  handleEntradaSinSalidaOk(): void {
+    this.isEntradaSinSalidaVisible = false;
+  }
+
+  /** Cierra el modal de error de fechas */
+  closeDateError(): void {
+    this.showDateError = false;
+  }
+
+  /**
+   * Carga la lista completa de empleados desde el backend.
+   * Solo disponible para usuarios con rol de administrador.
+   */
   private loadEmpleados() {
     this.empleadosService.getAll().subscribe({
       next: (data) => {
@@ -422,6 +588,11 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     });
   }
 
+  /**
+   * Maneja la búsqueda de empleados mientras el admin escribe.
+   * Filtra la lista de empleados por nombre, apellidos, DNI o email.
+   * @param event Evento del input de búsqueda
+   */
   onEmpleadoSearch(event: Event) {
     const input = event.target as HTMLInputElement;
     const query = input.value.toLowerCase().trim();
@@ -442,35 +613,51 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     this.showEmpleadosList = this.filteredEmpleados.length > 0;
   }
 
+  /**
+   * Selecciona un empleado de la lista de resultados de búsqueda.
+   * Aplica automáticamente el filtro si hay fechas seleccionadas.
+   * @param emp Empleado seleccionado
+   */
   selectEmpleado(emp: EmpleadoDto) {
     this.selectedEmpleadoId = emp.id;
     this.searchQuery = `${emp.nombre} ${emp.apellidos} (${emp.dni})`;
     this.filteredEmpleados = [];
     this.showEmpleadosList = false;
-    // Aplicar filtro automáticamente si hay fechas seleccionadas
+    // Si hay fechas seleccionadas, aplicar el filtro automáticamente
     if (this.filterStart && this.filterEnd) {
       this.applyFilter();
     }
   }
 
+  /**
+   * Limpia la selección de empleado y el campo de búsqueda.
+   * Aplica automáticamente el filtro si hay fechas seleccionadas.
+   */
   clearEmpleadoSelection() {
     this.selectedEmpleadoId = null;
     this.searchQuery = '';
     this.filteredEmpleados = [];
     this.showEmpleadosList = false;
-    // Aplicar filtro automáticamente si hay fechas seleccionadas
+    // Si hay fechas seleccionadas, reaplicar el filtro con todos los empleados
     if (this.filterStart && this.filterEnd) {
       this.applyFilter();
     }
   }
 
-  // … (resto de tu código: filtros, agrupación, utilidades)
-
+  /**
+   * Guarda el historial de fichajes en localStorage.
+   * Se ejecuta después de cada modificación del historial.
+   */
   private saveHistory() {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(this.history));
     } catch {}
   }
+
+  /**
+   * Carga el historial de fichajes desde localStorage.
+   * Se ejecuta al iniciar el componente.
+   */
   private loadHistory() {
     try {
       const raw = localStorage.getItem(this.storageKey);
@@ -480,6 +667,11 @@ export class Fichaje implements AfterViewInit, OnDestroy {
     }
   }
 
+  /**
+   * Convierte milisegundos a formato legible de horas y minutos.
+   * @param ms Milisegundos a convertir
+   * @returns String en formato "Xh Ym"
+   */
   msToHhMm(ms: number) {
     const totalSec = Math.floor((ms || 0) / 1000);
     const h = Math.floor(totalSec / 3600);

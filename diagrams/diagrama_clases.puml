@@ -1,0 +1,437 @@
+@startuml Diagrama de Clases - FichajeApp
+
+' Configuración visual
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor<<Entity>> LightYellow
+    BackgroundColor<<Service>> LightBlue
+    BackgroundColor<<Component>> LightGreen
+    BackgroundColor<<Guard>> Pink
+    BorderColor Black
+    ArrowColor Black
+}
+
+' ==================== BACKEND (C# / .NET Core) ====================
+
+package "Backend - ASP.NET Core" {
+
+    ' Entidades
+    class Empleado <<Entity>> {
+        + int Id
+        + string Nombre
+        + string Apellidos
+        + string Dni
+        + string Email
+        + string Password
+        + string Telefono
+        + string Rol
+        + bool Activo
+        + DateTime? FechaBaja
+        + string? MotivoBaja
+        --
+        + ICollection<Fichaje> Fichajes
+        + ICollection<Ausencia> Ausencias
+    }
+
+    class Fichaje <<Entity>> {
+        + int Id
+        + int EmpleadoId
+        + DateTime FechaHora
+        + string Tipo
+        + string? Incidencia
+        --
+        + Empleado Empleado
+    }
+
+    class Ausencia <<Entity>> {
+        + int Id
+        + int EmpleadoId
+        + DateTime FechaInicio
+        + DateTime FechaFin
+        + string Motivo
+        + string Estado
+        + DateTime FechaSolicitud
+        --
+        + Empleado Empleado
+    }
+
+    ' DbContext
+    class FichajeAppDbContext {
+        + DbSet<Empleado> Empleados
+        + DbSet<Fichaje> Fichajes
+        + DbSet<Ausencia> Ausencias
+        --
+        + OnModelCreating(ModelBuilder)
+        + SaveChangesAsync()
+    }
+
+    ' Controladores
+    class AuthController {
+        - IAuthService _authService
+        --
+        + Login(LoginDto) : ActionResult<string>
+        + Register(RegisterDto) : ActionResult
+        + GetCurrentUser() : ActionResult<EmpleadoDto>
+    }
+
+    class EmpleadosController {
+        - IEmpleadoService _empleadoService
+        --
+        + GetAll() : ActionResult<List<EmpleadoDto>>
+        + GetById(int id) : ActionResult<EmpleadoDto>
+        + Create(EmpleadoDto) : ActionResult
+        + Update(int id, EmpleadoDto) : ActionResult
+        + Delete(int id) : ActionResult
+        + DarDeBaja(int id, string motivo) : ActionResult
+    }
+
+    class FichajesController {
+        - IFichajeService _fichajeService
+        --
+        + GetByEmpleado(int empleadoId) : ActionResult<List<FichajeDto>>
+        + GetAll() : ActionResult<List<FichajeDto>>
+        + Create(FichajeDto) : ActionResult
+        + RegistrarIncidencia(int id, string incidencia) : ActionResult
+    }
+
+    class AusenciasController {
+        - IAusenciaService _ausenciaService
+        --
+        + GetByEmpleado(int empleadoId) : ActionResult<List<AusenciaDto>>
+        + GetAll() : ActionResult<List<AusenciaDto>>
+        + Create(AusenciaDto) : ActionResult
+        + ActualizarEstado(int id, string estado) : ActionResult
+        + Delete(int id) : ActionResult
+    }
+
+    ' Servicios
+    interface IAuthService <<Service>> {
+        + Login(string email, string password) : Task<string>
+        + Register(EmpleadoDto empleado) : Task<bool>
+        + ValidateToken(string token) : Task<int?>
+    }
+
+    class AuthService <<Service>> {
+        - FichajeAppDbContext _context
+        - IConfiguration _config
+        --
+        + Login(string email, string password) : Task<string>
+        + Register(EmpleadoDto empleado) : Task<bool>
+        + ValidateToken(string token) : Task<int?>
+        - GenerateJwtToken(Empleado) : string
+        - HashPassword(string) : string
+        - VerifyPassword(string, string) : bool
+    }
+
+    interface IEmpleadoService <<Service>> {
+        + GetAll() : Task<List<Empleado>>
+        + GetById(int id) : Task<Empleado>
+        + Create(Empleado) : Task<bool>
+        + Update(Empleado) : Task<bool>
+        + Delete(int id) : Task<bool>
+        + DarDeBaja(int id, string motivo) : Task<bool>
+    }
+
+    class EmpleadoService <<Service>> {
+        - FichajeAppDbContext _context
+        --
+        + GetAll() : Task<List<Empleado>>
+        + GetById(int id) : Task<Empleado>
+        + Create(Empleado) : Task<bool>
+        + Update(Empleado) : Task<bool>
+        + Delete(int id) : Task<bool>
+        + DarDeBaja(int id, string motivo) : Task<bool>
+    }
+
+    interface IFichajeService <<Service>> {
+        + GetByEmpleado(int empleadoId) : Task<List<Fichaje>>
+        + GetAll() : Task<List<Fichaje>>
+        + Create(Fichaje) : Task<bool>
+        + RegistrarIncidencia(int id, string incidencia) : Task<bool>
+    }
+
+    class FichajeService <<Service>> {
+        - FichajeAppDbContext _context
+        --
+        + GetByEmpleado(int empleadoId) : Task<List<Fichaje>>
+        + GetAll() : Task<List<Fichaje>>
+        + Create(Fichaje) : Task<bool>
+        + RegistrarIncidencia(int id, string incidencia) : Task<bool>
+    }
+
+    interface IAusenciaService <<Service>> {
+        + GetByEmpleado(int empleadoId) : Task<List<Ausencia>>
+        + GetAll() : Task<List<Ausencia>>
+        + Create(Ausencia) : Task<bool>
+        + ActualizarEstado(int id, string estado) : Task<bool>
+        + Delete(int id) : Task<bool>
+    }
+
+    class AusenciaService <<Service>> {
+        - FichajeAppDbContext _context
+        --
+        + GetByEmpleado(int empleadoId) : Task<List<Ausencia>>
+        + GetAll() : Task<List<Ausencia>>
+        + Create(Ausencia) : Task<bool>
+        + ActualizarEstado(int id, string estado) : Task<bool>
+        + Delete(int id) : Task<bool>
+    }
+
+    ' DTOs
+    class LoginDto {
+        + string Email
+        + string Password
+    }
+
+    class EmpleadoDto {
+        + int Id
+        + string Nombre
+        + string Apellidos
+        + string Dni
+        + string Email
+        + string Telefono
+        + string Rol
+    }
+
+    class FichajeDto {
+        + int Id
+        + int EmpleadoId
+        + DateTime FechaHora
+        + string Tipo
+        + string? Incidencia
+    }
+
+    class AusenciaDto {
+        + int Id
+        + int EmpleadoId
+        + DateTime FechaInicio
+        + DateTime FechaFin
+        + string Motivo
+        + string Estado
+    }
+}
+
+' ==================== FRONTEND (Angular / TypeScript) ====================
+
+package "Frontend - Angular" {
+
+    ' Componentes principales
+    class AppComponent <<Component>> {
+        + title: string
+        --
+        + ngOnInit(): void
+    }
+
+    class HeaderComponent <<Component>> {
+        + isAuthenticated: boolean
+        + currentUser: any
+        --
+        + ngOnInit(): void
+        + logout(): void
+    }
+
+    class FooterComponent <<Component>> {
+        --
+    }
+
+    class LoginComponent <<Component>> {
+        + loginForm: FormGroup
+        - authService: AuthService
+        - router: Router
+        --
+        + ngOnInit(): void
+        + onSubmit(): void
+        + login(): void
+    }
+
+    class RegistroComponent <<Component>> {
+        + registroForm: FormGroup
+        + empleados: any[]
+        + isAdmin: boolean
+        - empleadosService: EmpleadosService
+        - authService: AuthService
+        --
+        + ngOnInit(): void
+        + cargarEmpleados(): void
+        + registrar(): void
+        + modificar(): void
+        + eliminar(): void
+        + buscarEmpleado(term: string): void
+    }
+
+    class FichajeComponent <<Component>> {
+        + ultimoFichaje: any
+        + fichajes: any[]
+        + empleadoId: number
+        - fichajesService: FichajesService
+        - authService: AuthService
+        --
+        + ngOnInit(): void
+        + ficharEntrada(): void
+        + ficharSalida(): void
+        + registrarIncidencia(): void
+        + cargarFichajes(): void
+    }
+
+    class AusenciasComponent <<Component>> {
+        + ausencias: any[]
+        + empleados: any[]
+        + ausenciaForm: FormGroup
+        + isAdmin: boolean
+        - ausenciasService: AusenciasService
+        - empleadosService: EmpleadosService
+        - authService: AuthService
+        --
+        + ngOnInit(): void
+        + cargarAusencias(): void
+        + solicitarAusencia(): void
+        + eliminarAusencia(id: number): void
+        + actualizarEstado(id: number, estado: string): void
+        + buscarEmpleado(term: string): void
+    }
+
+    class ContactoComponent <<Component>> {
+        + contactoForm: FormGroup
+        --
+        + ngOnInit(): void
+        + enviarContacto(): void
+    }
+
+    class PrivacidadComponent <<Component>> {
+        --
+    }
+
+    ' Servicios Angular
+    class AuthService <<Service>> {
+        - http: HttpClient
+        - router: Router
+        - apiUrl: string
+        - currentUserSubject: BehaviorSubject<any>
+        --
+        + login(email: string, password: string): Observable<any>
+        + logout(): void
+        + isAuthenticated(): boolean
+        + getCurrentUser(): any
+        + getToken(): string
+        + isAdmin(): boolean
+    }
+
+    class EmpleadosService <<Service>> {
+        - http: HttpClient
+        - apiUrl: string
+        --
+        + getAll(): Observable<any[]>
+        + getById(id: number): Observable<any>
+        + create(empleado: any): Observable<any>
+        + update(id: number, empleado: any): Observable<any>
+        + delete(id: number): Observable<any>
+        + buscar(term: string): Observable<any[]>
+    }
+
+    class FichajesService <<Service>> {
+        - http: HttpClient
+        - apiUrl: string
+        --
+        + getByEmpleado(empleadoId: number): Observable<any[]>
+        + getAll(): Observable<any[]>
+        + registrarEntrada(empleadoId: number): Observable<any>
+        + registrarSalida(empleadoId: number): Observable<any>
+        + registrarIncidencia(fichajeId: number, incidencia: string): Observable<any>
+    }
+
+    class AusenciasService <<Service>> {
+        - http: HttpClient
+        - apiUrl: string
+        --
+        + getByEmpleado(empleadoId: number): Observable<any[]>
+        + getAll(): Observable<any[]>
+        + create(ausencia: any): Observable<any>
+        + actualizarEstado(id: number, estado: string): Observable<any>
+        + delete(id: number): Observable<any>
+    }
+
+    ' Guards
+    class AuthGuard <<Guard>> {
+        - authService: AuthService
+        - router: Router
+        --
+        + canActivate(): boolean
+    }
+
+    class AdminGuard <<Guard>> {
+        - authService: AuthService
+        - router: Router
+        --
+        + canActivate(): boolean
+    }
+
+    ' Interceptor
+    class AuthInterceptor {
+        - authService: AuthService
+        --
+        + intercept(request: HttpRequest, next: HttpHandler): Observable<HttpEvent>
+    }
+}
+
+' ==================== RELACIONES ====================
+
+' Relaciones de entidades (Backend)
+Empleado "1" --> "*" Fichaje : tiene
+Empleado "1" --> "*" Ausencia : solicita
+
+FichajeAppDbContext --> Empleado : gestiona
+FichajeAppDbContext --> Fichaje : gestiona
+FichajeAppDbContext --> Ausencia : gestiona
+
+' Controladores usan servicios
+AuthController --> IAuthService : usa
+EmpleadosController --> IEmpleadoService : usa
+FichajesController --> IFichajeService : usa
+AusenciasController --> IAusenciaService : usa
+
+' Implementación de interfaces
+AuthService ..|> IAuthService : implementa
+EmpleadoService ..|> IEmpleadoService : implementa
+FichajeService ..|> IFichajeService : implementa
+AusenciaService ..|> IAusenciaService : implementa
+
+' Servicios usan DbContext
+AuthService --> FichajeAppDbContext : usa
+EmpleadoService --> FichajeAppDbContext : usa
+FichajeService --> FichajeAppDbContext : usa
+AusenciaService --> FichajeAppDbContext : usa
+
+' DTOs usados por controladores
+AuthController ..> LoginDto : usa
+AuthController ..> EmpleadoDto : usa
+EmpleadosController ..> EmpleadoDto : usa
+FichajesController ..> FichajeDto : usa
+AusenciasController ..> AusenciaDto : usa
+
+' Relaciones Frontend
+AppComponent --> HeaderComponent : contiene
+AppComponent --> FooterComponent : contiene
+
+LoginComponent --> AuthService : usa
+RegistroComponent --> EmpleadosService : usa
+RegistroComponent --> AuthService : usa
+FichajeComponent --> FichajesService : usa
+FichajeComponent --> AuthService : usa
+AusenciasComponent --> AusenciasService : usa
+AusenciasComponent --> EmpleadosService : usa
+AusenciasComponent --> AuthService : usa
+
+' Guards
+AuthGuard --> AuthService : verifica
+AdminGuard --> AuthService : verifica
+
+' Interceptor
+AuthInterceptor --> AuthService : obtiene token
+
+' Comunicación Frontend-Backend (HTTP)
+AuthService ..> AuthController : HTTP
+EmpleadosService ..> EmpleadosController : HTTP
+FichajesService ..> FichajesController : HTTP
+AusenciasService ..> AusenciasController : HTTP
+
+@enduml

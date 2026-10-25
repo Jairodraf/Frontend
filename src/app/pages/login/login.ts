@@ -10,8 +10,13 @@ import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { finalize } from 'rxjs/operators';
-import { AuthService } from '../../services/auth.service'; // ⬅️ IMPORTANTE
+import { AuthService } from '../../services/auth.service';
 
+/**
+ * Componente de página de inicio de sesión.
+ * Permite a los usuarios autenticarse con email y contraseña.
+ * Redirige según el rol del usuario (Admin o User).
+ */
 @Component({
   selector: 'app-login',
   standalone: true,
@@ -21,17 +26,26 @@ import { AuthService } from '../../services/auth.service'; // ⬅️ IMPORTANTE
 })
 
 export class Login implements OnInit {
+  /** Formulario reactivo con campos de email y contraseña */
   validateForm: FormGroup;
+  /** Indicador de carga durante el proceso de login */
   loading = false;
+  /** Controla la visibilidad del modal de error de credenciales */
   showLoginError = false;
+  /** Controla la visibilidad de la contraseña en el campo de texto */
   passwordVisible = false;
 
+  // Servicios inyectados
   private fb = inject(FormBuilder);
   private http = inject(HttpClient);
   private router = inject(Router);
   private msg = inject(NzMessageService);
-  private auth = inject(AuthService); // ⬅️ IMPORTANTE
+  private auth = inject(AuthService);
 
+  /**
+   * Constructor del componente.
+   * Inicializa el formulario reactivo con validaciones para email y contraseña.
+   */
   constructor() {
     this.validateForm = this.fb.group({
       email: ['', [Validators.required, Validators.email]],
@@ -39,14 +53,24 @@ export class Login implements OnInit {
     });
   }
 
+  /**
+   * Hook de inicialización del componente.
+   * Si el usuario ya tiene sesión activa, redirige a la página principal
+   * para evitar que vuelva a la pantalla de login.
+   */
   ngOnInit(): void {
-    // Si ya hay sesión, evita volver a /login
     if (this.auth.hasToken()) {
       this.router.navigateByUrl('/');
     }
   }
 
+  /**
+   * Maneja el envío del formulario de login.
+   * Valida los campos, envía las credenciales al servidor,
+   * y redirige según el rol del usuario (Admin o User).
+   */
   submitForm(): void {
+    // Validar el formulario: marcar campos como dirty si hay errores
     if (this.validateForm.invalid) {
       Object.values(this.validateForm.controls).forEach(c => {
         c.markAsDirty();
@@ -58,24 +82,27 @@ export class Login implements OnInit {
     const { email, contrasena } = this.validateForm.value;
     this.loading = true;
 
+    // Enviar credenciales al servidor (vía proxy configurado en proxy.conf.json)
     this.http.post<{ token: string; rol: string; empleadoId: number }>(
-      '/api/auth/login', // ⬅️ vía proxy
+      '/api/auth/login',
       { email, contrasena }
     )
     .pipe(finalize(() => this.loading = false))
     .subscribe({
       next: (res) => {
-        // 🔐 Guarda token + rol en el AuthService (esto actualiza isAdmin$, isLogged$ del header)
+        // Guardar token, rol y empleadoId en el AuthService
+        // Esto actualiza los observables isAdmin$ e isLogged$ para actualizar el header
         this.auth.setAuth(res.token, res.rol, res.empleadoId);
 
-        // 🚦 Redirección según rol
+        // Redirigir según el rol del usuario
         if (res.rol === 'Admin') {
-          this.router.navigateByUrl('/fichaje'); // o a tu dashboard de admin
+          this.router.navigateByUrl('/fichaje'); // Dashboard de administrador
         } else {
-          this.router.navigateByUrl('/fichaje');        // ruta para usuarios
+          this.router.navigateByUrl('/fichaje'); // Dashboard de usuario
         }
       },
       error: (err) => {
+        // Error 401: credenciales incorrectas
         if (err?.status === 401) {
           this.showLoginError = true;
         } else {
@@ -85,6 +112,7 @@ export class Login implements OnInit {
     });
   }
 
+  /** Cierra el modal de error de credenciales */
   closeLoginError() {
     this.showLoginError = false;
   }
